@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mining Demo - Anti-Collision Signals</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        canvas { display: block; }
+        
+        #ui-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+        }
+        
+        button {
+            background-color: #2a3b4c;
+            color: white;
+            border: 2px solid #ffffff;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background-color: #4a5b6c;
+        }
+
+        /* NEW: The Warning/Information Text Overlay */
+        #info-overlay {
+            position: absolute;
+            top: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 30, 40, 0.8);
+            color: #00ffff;
+            border: 2px solid #00ffff;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            font-family: monospace;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.4);
+            display: none; /* Hidden by default */
+            z-index: 20;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui-container">
+        <button id="toggle-fog">Turn Fog OFF</button>
+    </div>
+    
+    <!-- The Alert Banner -->
+    <div id="info-overlay">📡 DUMPERS RECEIVING INFO FROM NODE TO AVOID COLLISION...</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        // 1. SCENE & FOG
+        const scene = new THREE.Scene();
+        const fogColor = new THREE.Color(0xa0b0c0); 
+        const clearSkyColor = new THREE.Color(0x87CEEB); 
+        
+        const myFog = new THREE.Fog(fogColor, 40, 150); 
+        scene.background = fogColor;
+        scene.fog = myFog; 
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 60, 90); 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true; 
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true; 
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2 - 0.05; 
+        controls.target.set(0, 0, 0); 
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); 
+        scene.add(ambientLight);
+
+        // Ground
+        const groundGeo = new THREE.PlaneGeometry(400, 400);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x3d2b1f }); 
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.5; 
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // 2. MOUNTAIN LOADING AREA
+        function buildMountainArea() {
+            const mountainGroup = new THREE.Group();
+            const rockMat = new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.9, flatShading: true });
+
+            const peak1 = new THREE.Mesh(new THREE.DodecahedronGeometry(18, 1), rockMat);
+            peak1.position.set(0, 5, 10);
+            peak1.scale.set(1, 1.4, 1);
+            peak1.castShadow = true;
+            peak1.receiveShadow = true;
+            mountainGroup.add(peak1);
+
+            const peak2 = new THREE.Mesh(new THREE.DodecahedronGeometry(12, 1), rockMat);
+            peak2.position.set(-25, 2, 15);
+            peak2.castShadow = true;
+            peak2.receiveShadow = true;
+            mountainGroup.add(peak2);
+            
+            const peak3 = new THREE.Mesh(new THREE.DodecahedronGeometry(14, 1), rockMat);
+            peak3.position.set(25, 2, 15);
+            peak3.castShadow = true;
+            peak3.receiveShadow = true;
+            mountainGroup.add(peak3);
+
+            const oreMat = new THREE.MeshStandardMaterial({ color: 0x221100, flatShading: true });
+            const orePile = new THREE.Mesh(new THREE.DodecahedronGeometry(5, 0), oreMat);
+            orePile.position.set(-75, 1, -40); 
+            orePile.scale.set(1.5, 0.5, 1);
+            orePile.castShadow = true;
+            mountainGroup.add(orePile);
+
+            scene.add(mountainGroup);
+        }
+        buildMountainArea();
+
+        // 3. FLAT WIDE ROAD
+        const curve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(-60, 0, -40),
+            new THREE.Vector3(-60, 0, 0),   
+            new THREE.Vector3(-40, 0, 40),  
+            new THREE.Vector3(0, 0, 50),    
+            new THREE.Vector3(40, 0, 40),   
+            new THREE.Vector3(60, 0, 0),    
+            new THREE.Vector3(60, 0, -40)   
+        ]);
+        
+        const roadRadius = 8; 
+        const roadGeo = new THREE.TubeGeometry(curve, 150, roadRadius, 8, false);
+        roadGeo.scale(1, 0.01, 1); 
+        const roadMat = new THREE.MeshStandardMaterial({ color: 0x222222 }); 
+        const road = new THREE.Mesh(roadGeo, roadMat);
+        road.position.y = -0.4; 
+        road.receiveShadow = true;
+        scene.add(road);
+
+        function getLanePosition(progress, laneOffset) {
+            const center = curve.getPointAt(progress);
+            const tangent = curve.getTangentAt(progress).normalize();
+            const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+            return center.clone().add(normal.multiplyScalar(laneOffset));
+        }
+
+        // 4. LIGHT POLES & TECH NODE
+        let nodeLedMaterial = null;
+        let smallNodeLedMesh = null; 
+
+        function createLightPole(polePosition, roadCenterPosition, hasSmallNode = false) {
+            const poleGroup = new THREE.Group();
+            poleGroup.position.copy(polePosition);
+            poleGroup.lookAt(roadCenterPosition.x, polePosition.y, roadCenterPosition.z);
+
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 12, 16), new THREE.MeshStandardMaterial({ color: 0x555555 }));
+            pole.position.y = 6; 
+            pole.castShadow = true;
+            poleGroup.add(pole);
+
+            const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffddaa }));
+            bulb.position.set(0, 11.5, 2.5); 
+            poleGroup.add(bulb);
+
+            const spotLight = new THREE.SpotLight(0xffddaa, 2);
+            spotLight.position.set(0, 11.5, 2.5);
+            spotLight.angle = Math.PI / 4;
+            spotLight.penumbra = 0.5;
+            spotLight.distance = 40;
+            spotLight.castShadow = true;
+            
+            const target = new THREE.Object3D();
+            target.position.set(0, 0, 10); 
+            poleGroup.add(target);
+            spotLight.target = target;
+            poleGroup.add(spotLight);
+
+            if (hasSmallNode) {
+                const nodeBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1.5, 0.8), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+                nodeBox.position.set(0, 4, 0.4); 
+                nodeBox.castShadow = true;
+                poleGroup.add(nodeBox);
+
+                nodeLedMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 }); 
+                const led = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), nodeLedMaterial);
+                led.position.set(0, 4.4, 0.85); 
+                poleGroup.add(led);
+                
+                smallNodeLedMesh = led; 
+            }
+            scene.add(poleGroup);
+        }
+
+        function addPoleAtEdge(t, hasSmallNode) {
+            const roadCenter = curve.getPointAt(t);
+            const tangent = curve.getTangentAt(t).normalize();
+            const offsetDist = roadRadius + 1.5;
+            const edgeNormal = new THREE.Vector3(-tangent.z, 0, tangent.x).multiplyScalar(offsetDist);
+            createLightPole(roadCenter.clone().add(edgeNormal), roadCenter, hasSmallNode);
+        }
+
+        // The tech node is exactly at 0.35 on the curve path
+        addPoleAtEdge(0.35, true); 
+        addPoleAtEdge(0.65, false);
+
+        // CREATE TWO SIGNAL BEAMS (One for each dumper)
+        const signalMat = new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 3, transparent: true, opacity: 0.8 });
+        
+        const signalBeam1 = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), signalMat);
+        signalBeam1.visible = false;
+        scene.add(signalBeam1);
+        
+        const signalBeam2 = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), signalMat);
+        signalBeam2.visible = false;
+        scene.add(signalBeam2);
+
+        // 5. DUMPER GENERATOR 
+        function createDumper(chassisColor, hasLoad) {
+            const dumper = new THREE.Group();
+            const mainMat = new THREE.MeshStandardMaterial({ color: chassisColor });
+            const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(4, 1.5, 8), mainMat);
+            body.position.y = 1.5;
+            body.castShadow = true;
+            dumper.add(body);
+
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 2.5), mainMat);
+            cabin.position.set(0, 3.25, 2.5);
+            cabin.castShadow = true;
+            dumper.add(cabin);
+
+            const bed = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2, 5), new THREE.MeshStandardMaterial({ color: 0x555555 }));
+            bed.position.set(0, 3.25, -1.25);
+            bed.castShadow = true;
+            dumper.add(bed);
+
+            if (hasLoad) {
+                const load = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.8, 4.8, 6), new THREE.MeshStandardMaterial({ color: 0x221100 }));
+                load.rotation.set(Math.PI / 2, Math.PI / 4, 0); 
+                load.position.set(0, 4, -1.25); 
+                load.castShadow = true;
+                dumper.add(load);
+            }
+
+            const wheelPositions = [[-2.2, 1, 3], [2.2, 1, 3], [-2.2, 1, -3], [2.2, 1, -3]];
+            wheelPositions.forEach(pos => {
+                const wheel = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1.2, 32), blackMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos); 
+                wheel.castShadow = true;
+                wheel.name = "wheel"; 
+                dumper.add(wheel);
+            });
+            return dumper;
+        }
+
+        const loadedDumper = createDumper(0xffcc00, true);
+        scene.add(loadedDumper);
+        
+        const emptyDumper = createDumper(0xdd6600, false);
+        scene.add(emptyDumper);
+
+        // 6. INTERACTIVE FOG BUTTON
+        let fogEnabled = true;
+        const fogBtn = document.getElementById('toggle-fog');
+        
+        fogBtn.addEventListener('click', () => {
+            fogEnabled = !fogEnabled; 
+            if (fogEnabled) {
+                scene.fog = myFog;
+                scene.background = fogColor;
+                fogBtn.innerText = "Turn Fog OFF";
+            } else {
+                scene.fog = null; 
+                scene.background = clearSkyColor;
+                fogBtn.innerText = "Turn Fog ON";
+            }
+        });
+
+        // 7. ANIMATION AND SIGNAL LOGIC
+        const clock = new THREE.Clock();
+        const infoOverlay = document.getElementById('info-overlay');
+        
+        let p1 = 0.0; // Loaded dumper starts at 0.0 and drives to 1.0
+        let p2 = 0.7; // Empty dumper starts ahead so they cross paths realistically
+        const baseSpeed = 0.05; 
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta(); 
+            const elapsedTime = clock.getElapsedTime();
+            controls.update(); 
+            
+            let isSignaling1 = false;
+            let isSignaling2 = false;
+            let currentSpeed1 = baseSpeed;
+            let currentSpeed2 = baseSpeed;
+
+            // ---- SIGNAL INTERACTION ZONES ----
+            // Loaded dumper approaching node at 0.35 (Detect from 0.28 to 0.38)
+            if (p1 > 0.28 && p1 < 0.38) {
+                isSignaling1 = true;
+                currentSpeed1 = baseSpeed * 0.3; // Slow down loaded dumper
+                
+                if (smallNodeLedMesh) {
+                    let ledPos = new THREE.Vector3();
+                    smallNodeLedMesh.getWorldPosition(ledPos);
+                    let dumperPos = new THREE.Vector3();
+                    loadedDumper.getWorldPosition(dumperPos);
+                    dumperPos.y += 3; // Aim at cabin
+                    
+                    const positions = signalBeam1.geometry.attributes.position.array;
+                    positions[0] = ledPos.x; positions[1] = ledPos.y; positions[2] = ledPos.z;
+                    positions[3] = dumperPos.x; positions[4] = dumperPos.y; positions[5] = dumperPos.z;
+                    signalBeam1.geometry.attributes.position.needsUpdate = true;
+                    signalBeam1.visible = true;
+                }
+            } else {
+                signalBeam1.visible = false;
+            }
+
+            // Empty dumper moving backwards towards node at 0.35 (Detect from 0.42 down to 0.32)
+            if (p2 < 0.42 && p2 > 0.32) {
+                isSignaling2 = true;
+                currentSpeed2 = baseSpeed * 0.3; // Slow down empty dumper
+                
+                if (smallNodeLedMesh) {
+                    let ledPos = new THREE.Vector3();
+                    smallNodeLedMesh.getWorldPosition(ledPos);
+                    let dumperPos = new THREE.Vector3();
+                    emptyDumper.getWorldPosition(dumperPos);
+                    dumperPos.y += 3;
+                    
+                    const positions = signalBeam2.geometry.attributes.position.array;
+                    positions[0] = ledPos.x; positions[1] = ledPos.y; positions[2] = ledPos.z;
+                    positions[3] = dumperPos.x; positions[4] = dumperPos.y; positions[5] = dumperPos.z;
+                    signalBeam2.geometry.attributes.position.needsUpdate = true;
+                    signalBeam2.visible = true;
+                }
+            } else {
+                signalBeam2.visible = false;
+            }
+
+            // UI and Node LED Management
+            if (isSignaling1 || isSignaling2) {
+                infoOverlay.style.display = 'block'; // Show the warning text
+                if (nodeLedMaterial) nodeLedMaterial.color.setHex(0x00ffff); // Node glows solid cyan
+            } else {
+                infoOverlay.style.display = 'none'; // Hide the warning text
+                if (nodeLedMaterial) nodeLedMaterial.color.setHex((Math.sin(elapsedTime * 10) > 0) ? 0xff0000 : 0x330000); // Normal blinking red
+            }
+
+            // ---- LOADED DUMPER MOVEMENT ----
+            p1 += currentSpeed1 * delta;
+            if (p1 > 1.0) p1 -= 1.0; 
+
+            let p1Next = (p1 + 0.01) % 1.0;
+            const pos1 = getLanePosition(p1, -3.5);
+            pos1.y = 0; 
+            loadedDumper.position.copy(pos1);
+            
+            const target1 = getLanePosition(p1Next, -3.5);
+            target1.y = 0;
+            loadedDumper.lookAt(target1);
+            
+            loadedDumper.children.forEach(child => {
+                if (child.name === "wheel") child.rotation.x -= (currentSpeed1 * delta * 50);
+            });
+
+            // ---- EMPTY DUMPER MOVEMENT (Moves backwards along path) ----
+            p2 -= currentSpeed2 * delta; 
+            if (p2 < 0.0) p2 += 1.0; 
+            
+            let p2Next = p2 - 0.01;
+            if (p2Next < 0) p2Next += 1.0; 
+            
+            const pos2 = getLanePosition(p2, 3.5);
+            pos2.y = 0; 
+            emptyDumper.position.copy(pos2);
+            
+            const target2 = getLanePosition(p2Next, 3.5);
+            target2.y = 0;
+            emptyDumper.lookAt(target2);
+            
+            emptyDumper.children.forEach(child => {
+                if (child.name === "wheel") child.rotation.x -= (currentSpeed2 * delta * 50);
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+    </script>
+</body>
+</html>
